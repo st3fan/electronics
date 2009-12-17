@@ -1,9 +1,0 @@
-
-Requesting temperatures...Dallas Temperature IC Control Library Demo
-Locating devices...Found 1 devices.
-Parasite power is: OFF
-Device 0 Address: 28675C5801000083
-Device 0 Resolution: 9
-Requesting temperatures...DONE
-Temp C: 23.50 Temp F: 74.30
-
