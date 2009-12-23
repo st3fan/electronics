@@ -15,7 +15,7 @@
 # FUSES ........ Parameters for avrdude to flash the fuses appropriately.
 
 DEVICE     = attiny2313
-CLOCK      = 8000000
+CLOCK      = 1000000
 PROGRAMMER = -c dragon_isp -P usb -B 10
 OBJECTS    = main.o
 FUSES      = -U lfuse:w:0x70:m -U hfuse:w:0xff:m
