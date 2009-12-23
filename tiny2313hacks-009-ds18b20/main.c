@@ -241,7 +241,7 @@ void xbee_tx(uint8_t c)
     usart_tx(c);
 }
 
-void xbee_tx_bytes(uint8_t* bytes, uint8_t length)
+void xbee_tx_bytes(const uint8_t* bytes, uint8_t length)
 {
     while (length--) {
         xbee_checksum += *bytes;
@@ -249,7 +249,7 @@ void xbee_tx_bytes(uint8_t* bytes, uint8_t length)
     }
 }
 
-void xbee_transmit_bytes(uint8_t* address, uint8_t* network, uint8_t* data, uint8_t length)
+void xbee_transmit_bytes(const uint8_t* address, const uint8_t* network, const uint8_t* data, uint8_t length)
 {
     xbee_tx(0x7e);               // Start Delimiter
     xbee_tx(0x00);               // Length
@@ -284,7 +284,7 @@ void xbee_transmit_string(uint8_t* address, uint8_t* network, uint8_t* string)
     xbee_transmit_bytes(address,network, string, strlen(string));
 }
 
-void xbee_transmit_strings(uint8_t* address, uint8_t* network, char** strings, uint8_t count)
+void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, char** strings, uint8_t count)
 {
     uint8_t length = 0;
     for (uint8_t i = 0; i < count; i++) {
@@ -317,7 +317,7 @@ void xbee_transmit_strings(uint8_t* address, uint8_t* network, char** strings, u
 static const uint8_t coordinator_address[8] = { 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f };
 static const uint8_t coordinator_network[2] = { 0xff, 0xfe };
 
-void stringify_int8(int8_t n, char* p)
+inline void stringify_int8(int8_t n, char* p)
 {
     char digit;
 
@@ -361,31 +361,37 @@ void stringify_int8(int8_t n, char* p)
     *p = 0x00;
 }
 
-void transmit_temperature(int8_t temperature0, int8_t temperature1, int8_t temperature2)
+void transmit_temperature(int8_t temperatureValues[3])
 {
-    char sensor0Reading[5];
-    char sensor1Reading[5];
-    char sensor2Reading[5];
+    char temperatureStrings[3][5];
 
-    stringify_int8(temperature0, sensor0Reading);
+    for (uint8_t i = 0; i < 3; i++)
+    {
+#if 0
+        temperatureStrings[i][0] = '-';
+        temperatureStrings[i][1] = '1';
+        temperatureStrings[i][2] = '2';
+        temperatureStrings[i][3] = '7';
+        temperatureStrings[i][4] = 0x00;
+#endif
+
+        if ((uint8_t) temperatureValues[i] != 0xff) {
+            stringify_int8(temperatureValues[i], &temperatureStrings[i][0]);
+        } else {
+            temperatureStrings[i][0] = 'n';
+            temperatureStrings[i][1] = 'i';
+            temperatureStrings[i][2] = 'l';
+            temperatureStrings[i][3] = 0x00;
+        }
+    }
     
-    sensor1Reading[0] = 'n';
-    sensor1Reading[1] = 'i';
-    sensor1Reading[2] = 'l';
-    sensor1Reading[3] = 0x00;
-
-    sensor2Reading[0] = 'n';
-    sensor2Reading[1] = 'i';
-    sensor2Reading[2] = 'l';
-    sensor2Reading[3] = 0x00;
-
-    char* strings[] = {
-        "{\"type\":\"thermometer\",\"sensors\":[",
-        sensor0Reading,
+    char* strings[7] = {
+        "{\"type\":\"thermometer\",\"version\":1,\"sensors\":[",
+        temperatureStrings[0],
         ",",
-        sensor1Reading,
+        temperatureStrings[1],
         ",",
-        sensor2Reading,
+        temperatureStrings[2],
         "]}"
     };
     
@@ -400,27 +406,6 @@ int main(void)
         _delay_ms(1000);
     }
 
-#if 0
-    while (1)
-    {
-        static uint8_t data[21] = {
-            0x7e, 0x00, 17,
-            0x10,
-            0x00,
-            0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f,
-            0x00, 0x00,
-            0x00,
-            0x00,
-            'H', 'i', '!',
-            0xff - ((0x10 + 0x00 + 0x00 + 0x13 + 0xa2 + 0x00 + 0x40 + 0x32 + 0x12 + 0x4f + 0x00 + 0x00 + 0x00 + 0x00 + 'H' + 'i' + '!') & 0xff)
-        };
-        
-        usart_tx_bytes(data, 21);
-
-        _delay_ms(2500);
-    }
-#endif
-    
     while (1)
     {
         if (onewire_reset() == 0)
@@ -441,7 +426,8 @@ int main(void)
                 int8_t temperature = (msb << 4) | (lsb >> 4) | (msb & 0b10000000);
                 
                 if (xbee_enable() == 0) {
-                    transmit_temperature(temperature, 0, 0);
+                    int8_t temperatures[3] = { temperature, 0, 0 };
+                    transmit_temperature(temperatures);
                     xbee_disable();
                 }
             }
