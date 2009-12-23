@@ -6,102 +6,6 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-void usart_setup()
-{
-    UBRRH = 0;
-    UBRRL = 51; // 9600 @ 8 Mhz
-    //UBRRL = 207; // 2400 @ 8 Mhz
-    UCSRA = 0;
-    UCSRB = (1 << TXEN); // | (1 << RXEN);
-    UCSRC = (1 << UCSZ1) | (1 << UCSZ0);
-}
-
-void usart_tx(unsigned char c)
-{
-    while ((UCSRA & (1 << UDRE)) == 0x00) {
-        // Do nothing
-    }
-    UDR = c;
-}
-
-void usart_tx_string(char* c)
-{
-    while (*c) {
-        usart_tx(*c++);
-    }
-}
-
-void usart_tx_bytes(uint8_t* p, uint8_t n)
-{
-    while (n--) {
-        usart_tx(*p++);
-    }
-}
-
-void usart_tx_hex_uint8(uint8_t c)
-{
-    static char digits[16] = { '0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f' };
-    usart_tx(digits[(c >> 4) & 0x0f]);
-    usart_tx(digits[(c >> 0) & 0x0f]);
-}
-
-void usart_tx_hex_uint16(uint16_t c)
-{
-    usart_tx_hex_uint8((c >> 8) & 0x00ff);
-    usart_tx_hex_uint8((c >> 0) & 0x00ff);
-}
-
-void usart_tx_int8(int8_t n)
-{
-    char digit;
-
-    if (n < 0) {
-        usart_tx('-');
-        n = abs(n);
-    }
-
-    if (n >= 100) {
-        digit = '0';
-        while (n >= 100) {
-            n = n - 100;
-            digit++;
-        }
-        usart_tx(digit);
-        if (n == 0) {
-            usart_tx_string("00");
-            return;
-        } else if (n < 10) {
-            usart_tx('0');
-        }
-    }
-
-    if (n >= 10) {
-        digit = '0';
-        while (n >= 10) {
-            n = n - 10;
-            digit++;
-        }
-        usart_tx(digit);
-        if (n == 0) {
-            usart_tx('0');
-            return;
-        }
-    }
-
-    digit = '0' + n;
-    usart_tx(digit);
-}
-
-//
-
-void display_write(uint16_t value)
-{
-    usart_tx((value >> 12) & 0x0f);
-    usart_tx((value >>  8) & 0x0f);
-    usart_tx((value >>  4) & 0x0f);
-    usart_tx((value >>  0) & 0x0f);
-}
-
 //
 
 #define DS18B20_PORT PORTD
@@ -197,126 +101,6 @@ uint8_t onewire_read()
 
 //
 
-void display_write_int8(int8_t v)
-{
-    //usart_tx('!');
-    //if (v >= 0) {
-    //    usart_tx('x');
-    //}
-    //if (abs(v) < 10) {
-    //    usart_tx('x');
-    //}
-    //if (abs(v) < 100) {
-    //    usart_tx('x');
-    //}
-    usart_tx_int8(v);
-    usart_tx('\r');
-    usart_tx('\n');
-}
-
-#if 0
-void xbee_write_int8(int8_t v)
-{
-    unsigned char header[3] = { 0x7e, 0x00, 0x0f };
-    usart_tx_bytes(header, 3);
-
-    unsigned char data[14] = { 0x10, 0x00, 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f, 0xff, 0xfe, 0x00, 0x00 };
-    usart_tx_bytes(data, 14);
-
-    usart_tx(v);
-    
-    uint8_t checksum = 0xff - ((0x10 + 0x13 + 0xa2 + 0x40 + 0x32 + 0x12 + 0x4f + 0xff + 0xfe + 0x00 + 0x00  + v) & 0xff);
-
-    usart_tx(checksum);
-}
-#endif
-
-//
-
-uint16_t xbee_checksum;
-
-void xbee_tx(uint8_t c)
-{
-    xbee_checksum += c;
-    usart_tx(c);
-}
-
-void xbee_tx_bytes(const uint8_t* bytes, uint8_t length)
-{
-    while (length--) {
-        xbee_checksum += *bytes;
-        usart_tx(*bytes++);
-    }
-}
-
-void xbee_transmit_bytes(const uint8_t* address, const uint8_t* network, const uint8_t* data, uint8_t length)
-{
-    xbee_tx(0x7e);               // Start Delimiter
-    xbee_tx(0x00);               // Length
-    xbee_tx(length + 14);
-    {
-        xbee_checksum = 0;
-
-        xbee_tx(0x10);               // API Identifier
-        {
-            xbee_tx(0x00);               // Frame ID
-            xbee_tx_bytes(address, 8);   // Destination Address
-            xbee_tx_bytes(network, 2);   // Destination Network Address
-            xbee_tx(0x00);               // Broadcast Radius
-            xbee_tx(0x00);               // Options
-            xbee_tx_bytes(data, length); // RF Data
-        }
-    }
-    usart_tx(0xff - (xbee_checksum & 0x00ff));  // Checksum
-}
-
-int xbee_enable()
-{
-    return 0;
-}
-
-void xbee_disable()
-{
-}
-
-void xbee_transmit_string(uint8_t* address, uint8_t* network, uint8_t* string)
-{
-    xbee_transmit_bytes(address,network, string, strlen(string));
-}
-
-void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, char** strings, uint8_t count)
-{
-    uint8_t length = 0;
-    for (uint8_t i = 0; i < count; i++) {
-        length += strlen(strings[i]);
-    }
-
-    xbee_tx(0x7e);                               // Start Delimiter
-    xbee_tx(0x00);                               // Length
-    xbee_tx(length + 14);
-    {
-        xbee_checksum = 0;
-
-        xbee_tx(0x10);                               // API Identifier
-        {
-            xbee_tx(0x00);                               // Frame ID
-            xbee_tx_bytes(address, 8);                   // Destination Address
-            xbee_tx_bytes(network, 2);                   // Destination Network Address
-            xbee_tx(0x00);                               // Broadcast Radius
-            xbee_tx(0x00);                               // Options
-            for (uint8_t i = 0; i < count; i++) {
-                xbee_tx_bytes(strings[i], strlen(strings[i])); // RF Data
-            }
-        }
-    }
-    usart_tx(0xff - (xbee_checksum & 0x00ff));   // Checksum
-}
-
-//
-
-static const uint8_t coordinator_address[8] = { 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f };
-static const uint8_t coordinator_network[2] = { 0xff, 0xfe };
-
 inline void stringify_int8(int8_t n, char* p)
 {
     char digit;
@@ -361,46 +145,117 @@ inline void stringify_int8(int8_t n, char* p)
     *p = 0x00;
 }
 
-void transmit_temperature(int8_t temperatureValues[3])
-{
-    char temperatureStrings[3][5];
+//
 
-    for (uint8_t i = 0; i < 3; i++)
-    {
 #if 0
-        temperatureStrings[i][0] = '-';
-        temperatureStrings[i][1] = '1';
-        temperatureStrings[i][2] = '2';
-        temperatureStrings[i][3] = '7';
-        temperatureStrings[i][4] = 0x00;
+void usart_tx(unsigned char c)
+{
+}
+
+void usart_tx_string(char* c)
+{
+    while (*c) {
+        usart_tx(*c++);
+    }
+}
+
+void usart_tx_bytes(uint8_t* p, uint8_t n)
+{
+    while (n--) {
+        usart_tx(*p++);
+    }
+}
 #endif
 
-        if ((uint8_t) temperatureValues[i] != 0xff) {
-            stringify_int8(temperatureValues[i], &temperatureStrings[i][0]);
-        } else {
-            temperatureStrings[i][0] = 'n';
-            temperatureStrings[i][1] = 'i';
-            temperatureStrings[i][2] = 'l';
-            temperatureStrings[i][3] = 0x00;
+uint16_t xbee_checksum;
+
+void xbee_setup()
+{
+    UBRRH = 0;
+    UBRRL = 51; // 9600 @ 8 Mhz
+    UCSRA = 0;
+    UCSRB = (1 << TXEN); // | (1 << RXEN);
+    UCSRC = (1 << UCSZ1) | (1 << UCSZ0);
+}
+
+void usart_tx(uint8_t c)
+{
+    while ((UCSRA & (1 << UDRE)) == 0x00) {
+        // Do nothing
+    }
+    UDR = c;
+}
+
+void xbee_tx(uint8_t c)
+{
+    xbee_checksum += c;
+    
+    while ((UCSRA & (1 << UDRE)) == 0x00) {
+        // Do nothing
+    }
+    UDR = c;
+}
+
+void xbee_tx_bytes(const uint8_t* bytes, uint8_t length)
+{
+    while (length--) {
+        xbee_checksum += *bytes;
+        while ((UCSRA & (1 << UDRE)) == 0x00) {
+            // Do nothing
+        }
+        UDR = *bytes++;
+    }
+}
+
+//
+
+void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, char** strings, uint8_t count)
+{
+    uint8_t length = 0;
+    for (uint8_t i = 0; i < count; i++) {
+        length += strlen(strings[i]);
+    }
+
+    xbee_tx(0x7e);                               // Start Delimiter
+    xbee_tx(0x00);                               // Length
+    xbee_tx(length + 14);
+    {
+        xbee_checksum = 0;
+
+        xbee_tx(0x10);                               // API Identifier
+        {
+            xbee_tx(0x00);                               // Frame ID
+            xbee_tx_bytes(address, 8);                   // Destination Address
+            xbee_tx_bytes(network, 2);                   // Destination Network Address
+            xbee_tx(0x00);                               // Broadcast Radius
+            xbee_tx(0x00);                               // Options
+            for (uint8_t i = 0; i < count; i++) {
+                xbee_tx_bytes(strings[i], strlen(strings[i])); // RF Data
+            }
         }
     }
-    
-    char* strings[7] = {
-        "{\"type\":\"thermometer\",\"version\":1,\"sensors\":[",
-        temperatureStrings[0],
-        ",",
-        temperatureStrings[1],
-        ",",
-        temperatureStrings[2],
-        "]}"
-    };
-    
-    xbee_transmit_strings(coordinator_address, coordinator_network, strings, 7);
+    xbee_tx(0xff - (xbee_checksum & 0x00ff));   // Checksum
 }
+
+//
+
+int xbee_enable()
+{
+    return 0;
+}
+
+void xbee_disable()
+{
+}
+
+//
+
+static const uint8_t coordinator_address[8] = { 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f };
+static const uint8_t coordinator_network[2] = { 0xff, 0xfe };
 
 int main(void)
 {
-    usart_setup();
+    xbee_setup();
 
     for (int i = 0; i < 15; i++) {
         _delay_ms(1000);
@@ -413,8 +268,6 @@ int main(void)
             onewire_write(DS18B20_CMD_SKIP_ROM);
             onewire_write(DS18B20_CMD_CONVERT_TEMP);
         
-            _delay_ms(250);
-            
             if (onewire_reset() == 0)
             {
                 onewire_write(DS18B20_CMD_SKIP_ROM);
@@ -425,9 +278,35 @@ int main(void)
                 
                 int8_t temperature = (msb << 4) | (lsb >> 4) | (msb & 0b10000000);
                 
-                if (xbee_enable() == 0) {
-                    int8_t temperatures[3] = { temperature, 0, 0 };
-                    transmit_temperature(temperatures);
+                if (xbee_enable() == 0)
+                {
+                    int8_t temperatureValues[3] = { temperature, 0, 0 };
+                    char temperatureStrings[3][5];
+
+                    for (uint8_t i = 0; i < 3; i++)
+                    {
+                        if ((uint8_t) temperatureValues[i] != 0xff) {
+                            stringify_int8(temperatureValues[i], &temperatureStrings[i][0]);
+                        } else {
+                            temperatureStrings[i][0] = 'n';
+                            temperatureStrings[i][1] = 'i';
+                            temperatureStrings[i][2] = 'l';
+                            temperatureStrings[i][3] = 0x00;
+                        }
+                    }
+                    
+                    char* strings[7] = {
+                        "{\"t\":\"t\",\"v\":1,\"sensors\":[",
+                        temperatureStrings[0],
+                        ",",
+                        temperatureStrings[1],
+                        ",",
+                        temperatureStrings[2],
+                        "]}"
+                    };
+                    
+                    xbee_transmit_strings(coordinator_address, coordinator_network, strings, 7);
+                    
                     xbee_disable();
                 }
             }
