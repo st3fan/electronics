@@ -15,63 +15,61 @@ void mydelay(uint8_t delay)
     }
 }
 
-volatile uint8_t count;
+volatile uint8_t count = 0;
 
 ISR(INT0_vect)
 {
-    cli();
-
-    PORTB |= (1 << PB3); // Turn on interrupt indicator LED
-
+    GIMSK &= ~(1 << INT0);
+    PORTB ^= (1 << PB3);
     count++;
-    
-    if (count == 4)
-    {
-        // Flash the led three times
-
-        for (uint8_t i = 0; i < 3; i++) {
-            PORTB |= (1 << PB0);
-            mydelay(50);
-            PORTB &= ~(1 << PB0);
-            mydelay(50);
-        }
-        
-        count = 0;
-    }
-
-    PORTB &= ~(1 << PB3); // Turn off interrupt indicator LED
-
-    // Wait while the line goes up again
-
-    while (PINB & (1 << PB2)) {
-        // Wait
-    }
-        
-    // Sleep
-        
-    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-    sleep_enable(); 
-
-    MCUCR &= ~(1 << ISC00);
-    MCUCR &= ~(1 << ISC01);
-    GIMSK = (1 << INT0);
-    sei();
-
-    sleep_cpu();
 }
 
 int main(void)
 {
-    count = 0;
-
     DDRB |= (1 << PB0) | (1 << PB3);
-
-    MCUCR &= ~(1 << ISC00);
-    MCUCR &= ~(1 << ISC01);
-    GIMSK = (1 << INT0);
     sei();
 
-    while (1) {}
+    while (1)
+    {
+        // Sleep
+        
+        set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+        sleep_enable(); 
+    
+        PRR = (1 << PRTIM1) | (1 << PRTIM0) | (1 << PRUSI) | (1 << PRADC);
+    
+        MCUCR &= ~(1 << ISC00);
+        MCUCR &= ~(1 << ISC01);
+        GIMSK = (1 << INT0);
+        
+        sleep_cpu();        
+
+        // If we have been woken up 4 times then it is time to do 'work'
+        
+        mydelay(50); // TODO: Without this delay I see PB3 quickly flash, as if the ISR is called twice rapidly
+
+        if (count == 4)
+        {
+            // Flash the led three times
+            
+            for (uint8_t i = 0; i < 3; i++) {
+                PORTB |= (1 << PB0);
+                mydelay(50);
+                PORTB &= ~(1 << PB0);
+                mydelay(50);
+            }
+        
+            // Reset the counter
+    
+            count = 0;
+        }
+        
+        // Wait while the line goes up again
+        
+        while (PINB & (1 << PB2)) {
+            // Wait
+        }
+    }
 
     return 0;
 }
