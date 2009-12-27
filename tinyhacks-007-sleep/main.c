@@ -19,16 +19,14 @@ volatile uint8_t count;
 
 ISR(INT0_vect)
 {
-    mydelay(50);
-
     cli();
+
+    PORTB |= (1 << PB3); // Turn on interrupt indicator LED
 
     count++;
     
     if (count == 4)
     {
-        PORTB |= (1 << PB3);
-
         // Flash the led three times
 
         for (uint8_t i = 0; i < 3; i++) {
@@ -38,9 +36,15 @@ ISR(INT0_vect)
             mydelay(50);
         }
         
-        PORTB &= ~(1 << PB3);
-
         count = 0;
+    }
+
+    PORTB &= ~(1 << PB3); // Turn off interrupt indicator LED
+
+    // Wait while the line goes up again
+
+    while (PINB & (1 << PB2)) {
+        // Wait
     }
         
     // Sleep
