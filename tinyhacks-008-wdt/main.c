@@ -18,8 +18,8 @@ ISR(WDT_vect)
 
     // Disable the watchdog
     
-    //WDTCR |= (1 << WDCE) | (1 << WDE);
-    //WDTCR &= ~(1 << WDE);
+    WDTCR |= (1 << WDCE) | (1 << WDE);
+    WDTCR &= ~(1 << WDE);
 
     // Increment the timer
     
