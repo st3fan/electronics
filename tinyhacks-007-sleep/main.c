@@ -10,13 +10,12 @@ volatile uint8_t count = 0;
 ISR(INT0_vect)
 {
     GIMSK &= ~(1 << INT0);
-    PORTB ^= (1 << PB3);
     count++;
 }
 
 int main(void)
 {
-    DDRB |= (1 << PB0) | (1 << PB3);
+    DDRB |= (1 << PB0);
     MCUCR &= ~(1 << ISC00);
     MCUCR &= ~(1 << ISC01);
     PRR = (1 << PRTIM1) | (1 << PRTIM0) | (1 << PRUSI) | (1 << PRADC);
@@ -31,10 +30,8 @@ int main(void)
         sleep_enable();
         GIMSK |= (1 << INT0);
         sleep_cpu();
-
-        // If we have been woken up 4 times then it is time to do 'work'
         
-        _delay_ms(50);
+        // If we have been woken up 4 times then it is time to do 'work'
         
         if (count == 4)
         {
@@ -51,10 +48,10 @@ int main(void)
     
             count = 0;
         }
-        
+
         // Wait while the line goes up again
         
-        while (PINB & (1 << PB2)) {
+        while ((PINB & (1 << PB2)) == 0) {
             // Wait
         }
     }
