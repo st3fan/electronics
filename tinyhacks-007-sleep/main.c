@@ -40,14 +40,14 @@ int main(void)
     
         MCUCR &= ~(1 << ISC00);
         MCUCR &= ~(1 << ISC01);
-        GIMSK = (1 << INT0);
+        GIMSK |= (1 << INT0);
         
         sleep_cpu();        
 
         // If we have been woken up 4 times then it is time to do 'work'
         
-        mydelay(50); // TODO: Without this delay I see PB3 quickly flash, as if the ISR is called twice rapidly
-
+        mydelay(50);
+        
         if (count == 4)
         {
             // Flash the led three times
