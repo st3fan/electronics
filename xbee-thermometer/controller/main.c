@@ -5,6 +5,7 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <avr/pgmspace.h>
+#include <avr/sleep.h>
 #include <util/delay.h>
 
 //
@@ -16,16 +17,17 @@ struct string_descriptor_t {
 
 //
 
-#define DS18B20_PORT PORTB
-#define DS18B20_DDR  DDRB
-#define DS18B20_PIN  PINB
-#define DS18B20_DQ   PB2
-#define DS18B20_VCC  PB3
+#define DS18B20_ONE_PORT PORTB
+#define DS18B20_ONE_DDR  DDRB
+#define DS18B20_ONE_PIN  PINB
+#define DS18B20_ONE_DQ   PB2
+#define DS18B20_ONE_VCC  PB3
 
-#define DS18B20_INPUT_MODE()  (DS18B20_DDR &= ~(1 << DS18B20_DQ))
-#define DS18B20_OUTPUT_MODE() (DS18B20_DDR |= (1 << DS18B20_DQ))
-#define DS18B20_LOW()         (DS18B20_PORT &= ~(1 << DS18B20_DQ))
-#define DS18B20_HIGH()        (DS18B20_PORT |= (1 << DS18B20_DQ))
+#define DS18B20_TWO_PORT PORTB
+#define DS18B20_TWO_DDR  DDRB
+#define DS18B20_TWO_PIN  PINB
+#define DS18B20_TWO_DQ   PB0
+#define DS18B20_TWO_VCC  PB1
 
 #define DS18B20_CMD_SKIP_ROM 0xcc
 #define DS18B20_CMD_CONVERT_TEMP 0x44
@@ -33,64 +35,49 @@ struct string_descriptor_t {
 
 // Returns 0 in case of no error
 
-uint8_t onewire_reset()
+uint8_t onewire_reset(volatile uint8_t* port, volatile uint8_t* ddr, volatile uint8_t* pin, uint8_t dq)
 {
     uint8_t result = 0;
 
-    DS18B20_LOW();
-    DS18B20_OUTPUT_MODE();
+    *port &= ~(1 << dq); // onewire_low(port, dq);
+    *ddr |= (1 << dq); // onewire_output_mode(ddr, dq);
     _delay_us(480);
-    DS18B20_INPUT_MODE();
+    *ddr &= ~(1 << dq); // onewire_input_mode(ddr, dq);
     
     _delay_us(70);
-    result = DS18B20_PIN & (1 << DS18B20_DQ);
+    result = *pin & (1 << dq);
     _delay_us(410);
     
     return result;
 }
 
-inline void onewire_write_bit(uint8_t bit)
-{
-    if (bit)
-    {
-        DS18B20_LOW();
-        DS18B20_OUTPUT_MODE();
-        _delay_us(6);
-        DS18B20_HIGH();
-        _delay_us(64);
-    }
-    else
-    {
-        DS18B20_LOW();
-        DS18B20_OUTPUT_MODE();
-        _delay_us(60);
-        DS18B20_HIGH();
-        _delay_us(10);
-    }
-}
-
-void onewire_write(uint8_t data)
+void onewire_write(volatile uint8_t* port, volatile uint8_t* ddr, volatile uint8_t* pin, uint8_t dq, uint8_t data)
 {
     for (uint8_t i = 0; i < 8; i++)
     {
-        onewire_write_bit(data & 0x01);
+        if (data & 0x01)
+        {
+            *port &= ~(1 << dq); // onewire_low(port, dq);
+            *ddr |= (1 << dq);   // onewire_output_mode(ddr, dq);
+            _delay_us(6);
+            *port |= (1 << dq);  // onewire_high(port, dq);
+            _delay_us(64);
+        }
+        else
+        {
+            *port &= ~(1 << dq); //onewire_low(port, dq);
+            *ddr |= (1 << dq);   //onewire_output_mode(ddr, dq);
+            _delay_us(60);
+            *port |= (1 << dq);  //onewire_high(port, dq);
+            _delay_us(10);
+        }
+
         // shift the data byte for the next bit
         data >>= 1;
     }
 }
 
-inline uint8_t onewire_read_bit()
-{
-    DS18B20_LOW();
-    _delay_us(6);
-    DS18B20_HIGH();    
-    _delay_us(9);
-    uint8_t result = DS18B20_PIN & (1 << DS18B20_DQ);
-    _delay_us(55);
-    return result;
-}
-
-uint8_t onewire_read()
+uint8_t onewire_read(volatile uint8_t* port, volatile uint8_t* ddr, volatile uint8_t* pin, uint8_t dq)
 {
     uint8_t result = 0;
 
@@ -100,7 +87,15 @@ uint8_t onewire_read()
         result >>= 1;
 
         // if result is one, then set MS bit
-        if (onewire_read_bit()) {
+
+        *port &= ~(1 << dq); // onewire_low(port, dq);
+        _delay_us(6);
+        *port |= (1 << dq);  // onewire_high(port, dq);
+        _delay_us(9);
+        uint8_t bit = *pin & (1 << dq);
+        _delay_us(55);
+
+        if (bit) {
             result |= 0x80;
         }
     }
@@ -110,6 +105,7 @@ uint8_t onewire_read()
 
 //
 
+#if 0
 inline void stringify_int8(int8_t n, char* p)
 {
     char digit;
@@ -153,6 +149,7 @@ inline void stringify_int8(int8_t n, char* p)
     
     *p = 0x00;
 }
+#endif
 
 //
 
@@ -160,11 +157,16 @@ uint8_t xbee_checksum;
 
 void xbee_setup()
 {
+    // Setup the UART
+
     UBRRH = 0;
     UBRRL = 51; // 9600 @ 8 Mhz
     UCSRA = 0;
-    UCSRB = (1 << TXEN); // | (1 << RXEN);
     UCSRC = (1 << UCSZ1) | (1 << UCSZ0);
+
+    // Setup the pins that we use to power the XBee
+
+    DDRD |= (1 << PD4) | (1 << PD5);
 }
 
 void usart_tx(uint8_t c)
@@ -210,30 +212,10 @@ void xbee_tx_bytes(const uint8_t* bytes, uint8_t length)
     }
 }
 
-void xbee_tx_bytes_P(const uint8_t* bytes, uint8_t length)
-{
-    while (length--) {
-        xbee_checksum += pgm_read_byte(bytes);
-        while ((UCSRA & (1 << UDRE)) == 0x00) {
-            // Do nothing
-        }
-        UDR = pgm_read_byte(bytes++);
-    }
-}
-
 //
 
-inline void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, struct string_descriptor_t* strings, uint8_t count)
+void xbee_transmit_bytes(const uint8_t* address, const uint8_t* network, uint8_t* bytes, uint8_t length)
 {
-    uint8_t length = 0;
-    for (uint8_t i = 0; i < count; i++) {
-        if (strings[i].type) {
-            length += strlen_P(strings[i].string);
-        } else {
-            length += strlen(strings[i].string);
-        }
-    }
-
     xbee_tx(0x7e);                               // Start Delimiter
     xbee_tx(0x00);                               // Length
     xbee_tx(length + 14);
@@ -247,13 +229,7 @@ inline void xbee_transmit_strings(const uint8_t* address, const uint8_t* network
             xbee_tx_bytes(network, 2);                   // Destination Network Address
             xbee_tx(0x00);                               // Broadcast Radius
             xbee_tx(0x00);                               // Options
-            for (uint8_t i = 0; i < count; i++) {
-                if (strings[i].type) {
-                    xbee_tx_bytes_P(strings[i].string, strlen_P(strings[i].string)); // RF Data
-                } else {
-                    xbee_tx_bytes(strings[i].string, strlen(strings[i].string)); // RF Data
-                }
-            }
+            xbee_tx_bytes(bytes, length);                // RF Data
         }
     }
     xbee_tx(0xff - (xbee_checksum & 0x00ff));   // Checksum
@@ -263,11 +239,35 @@ inline void xbee_transmit_strings(const uint8_t* address, const uint8_t* network
 
 int xbee_enable()
 {
+    // Enable power
+    PORTD |= (1 << PD4) | (1 << PD5);
+
+    // Setup the USART
+    UCSRB |= (1 << TXEN); // | (1 << RXEN);
+
+    // TODO: Ask the XBee if it is ready and connected
+
+    for (uint8_t i = 0; i < 10; i++) {
+        _delay_ms(1000);
+    }
+
     return 0;
 }
 
 void xbee_disable()
 {
+    // TODO: Ask the XBee if it is done transmitting
+
+    for (uint8_t i = 0; i < 10; i++) {
+        _delay_ms(1000);
+    }
+
+    // Disable the USART
+    UCSRB &= ~(1 << TXEN); // | (1 << RXEN);
+
+
+    // Turn off the power
+    PORTD &= ~((1 << PD4) | (1 << PD5));
 }
 
 //
@@ -275,79 +275,111 @@ void xbee_disable()
 const uint8_t coordinator_address[8] = { 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f };
 const uint8_t coordinator_network[2] = { 0xff, 0xfe };
 
-const char s1[] PROGMEM = "{\"t\":\"t\",\"v\":1,\"sensors\":[";
-const char s2[] PROGMEM = ",";
-const char s3[] PROGMEM = "]}";
+int8_t read_temperature(volatile uint8_t* port, volatile uint8_t* ddr, volatile uint8_t* pin, uint8_t dq, uint8_t vcc)
+{
+    int8_t temperature = 0xff;
+
+    *port |= (1 << vcc);
+
+    _delay_ms(1000);
+
+    if (onewire_reset(port, ddr, pin, dq) == 0)
+    {
+        onewire_write(port, ddr, pin, dq, DS18B20_CMD_SKIP_ROM);
+        onewire_write(port, ddr, pin, dq, DS18B20_CMD_CONVERT_TEMP);
+
+        _delay_ms(750);
+        
+        if (onewire_reset(port, ddr, pin, dq) == 0)
+        {
+            onewire_write(port, ddr, pin, dq, DS18B20_CMD_SKIP_ROM);
+            onewire_write(port, ddr, pin, dq, DS18B20_CMD_READ_SCRATCHPAD);
+            
+            uint8_t lsb = onewire_read(port, ddr, pin, dq);
+            uint8_t msb = onewire_read(port, ddr, pin, dq);
+            
+            temperature = (msb << 4) | (lsb >> 4) | (msb & 0b10000000);
+        }
+    }
+
+    *port &= ~(1 << vcc);
+
+    return temperature;
+}
+
+ISR(INT0_vect)
+{
+    // Disable the INT0 interrupt to prevent it from firing before we are ready to handle it again
+    GIMSK &= ~(1 << INT0);
+}
 
 int main(void)
 {
+    // Setup the VCC ports for the sensors
+
+    DS18B20_ONE_DDR |= (1 << DS18B20_ONE_VCC);
+    DS18B20_TWO_DDR |= (1 << DS18B20_TWO_VCC);    
+
+    // PB7 is our debug LED
+
+    DDRB |= (1 << PB7);
+
     xbee_setup();
 
-    //for (int i = 0; i < 15; i++) {
-    //    _delay_ms(1000);
-    //}
+    _delay_ms(1000);
+
+    sei();
 
     while (1)
     {
-        if (onewire_reset() == 0)
-        {
-            onewire_write(DS18B20_CMD_SKIP_ROM);
-            onewire_write(DS18B20_CMD_CONVERT_TEMP);
+        // Disable the one-wire ports
+
+        DS18B20_ONE_PORT &= ~(1 << DS18B20_ONE_DQ); // onewire_low(&DS18B20_ONE_PORT, DS18B20_ONE_DQ);
+        DS18B20_TWO_PORT &= ~(1 << DS18B20_TWO_DQ); // onewire_low(&DS18B20_TWO_PORT, DS18B20_TWO_DQ);
+
+        // Sleep in power down mode. Before we sleep we enable the INT0 interrupt.
+
+        GIMSK |= (1 << INT0); // This needs to be before the sleep instruction
         
-            if (onewire_reset() == 0)
-            {
-                onewire_write(DS18B20_CMD_SKIP_ROM);
-                onewire_write(DS18B20_CMD_READ_SCRATCHPAD);
+        set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+        sleep_enable();
+        sleep_cpu();
 
-                uint8_t lsb = onewire_read();
-                uint8_t msb = onewire_read();
-                
-                int8_t temperature = (msb << 4) | (lsb >> 4) | (msb & 0b10000000);
-                
-                if (xbee_enable() == 0)
-                {
-                    int8_t temperatureValues[2] = { temperature, 0 };
-                    char temperatureStrings[2][5];
+        // Debug
 
-                    for (uint8_t i = 0; i < 2; i++)
-                    {
-                        stringify_int8(temperatureValues[i], &temperatureStrings[i][0]);
+        // Flash the led three times
+        for (uint8_t i = 0; i < 3; i++) {
+            PORTB |= (1 << PB7);
+            _delay_ms(50);
+            PORTB &= ~(1 << PB7);
+            _delay_ms(50);
+        }
 
-#if 0
-                        if ((uint8_t) temperatureValues[i] != 0xff) {
-                            stringify_int8(temperatureValues[i], &temperatureStrings[i][0]);
-                        } else {
-                            temperatureStrings[i][0] = 'n';
-                            temperatureStrings[i][1] = 'i';
-                            temperatureStrings[i][2] = 'l';
-                            temperatureStrings[i][3] = 0x00;
-                        }
-#endif
-                    }
-                    
-                    struct string_descriptor_t strings[5] = {
-                        { 1, s1 },
-                        { 0, temperatureStrings[0] },
-                        { 1, s2 },
-                        { 0, temperatureStrings[1] },
-                        { 1, s3 }
-                    };
-                    
-                    usart_tx_string(temperatureStrings[0]);
-                    usart_tx(',');
-                    usart_tx_string(temperatureStrings[1]);
-                    usart_tx('\r');
-                    usart_tx('\n');
+        // Do work
 
-                    //xbee_transmit_strings(coordinator_address, coordinator_network, strings, 7);
-                    
-                    xbee_disable();
-                }
-            }
+        int8_t temperatureValues[2] = {
+            read_temperature(&DS18B20_ONE_PORT, &DS18B20_ONE_DDR, &DS18B20_ONE_PIN, DS18B20_ONE_DQ, DS18B20_ONE_VCC),
+            read_temperature(&DS18B20_TWO_PORT, &DS18B20_TWO_DDR, &DS18B20_TWO_PIN, DS18B20_TWO_DQ, DS18B20_TWO_VCC)
+        };
+
+        if (xbee_enable() == 0)
+        {
+            char packet[4] = {
+                0x01, // Temperature Sensor
+                0x02, // Two values
+                temperatureValues[0],
+                temperatureValues[1]
+            };
+
+            xbee_transmit_bytes(coordinator_address, coordinator_network, packet, 4);
+            
+            xbee_disable();
         }
         
         for (uint8_t i = 0; i < 2; i++) {
             _delay_ms(1000);
         }
     }
+
+    return 0;
 }

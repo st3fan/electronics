@@ -17,7 +17,7 @@ int main(void)
     DDRB = (1 << PB0);
 
     // Watchdog signal will be active low
-    //PORTB |= (1 << PB0);
+    PORTB |= (1 << PB0);
 
     // Setup the power reduction register
     PRR = (1 << PRTIM1) | (1 << PRTIM0) | (1 << PRUSI) | (1 << PRADC);
@@ -48,9 +48,9 @@ int main(void)
         {
             counter = 0;
 
-            PORTB |= (1 << PB0);
+            PINB |= (1 << PB0);
             _delay_ms(10);
-            PORTB &= ~(1 << PB0);
+            PINB |= (1 << PB0);
         }
     }
 
