@@ -6,14 +6,8 @@
 #include <avr/io.h>
 #include <avr/pgmspace.h>
 #include <avr/sleep.h>
+#include <avr/wdt.h>
 #include <util/delay.h>
-
-//
-
-struct string_descriptor_t {
-    uint8_t type;
-    char* string;
-};
 
 //
 
@@ -102,54 +96,6 @@ uint8_t onewire_read(volatile uint8_t* port, volatile uint8_t* ddr, volatile uin
     
     return result;
 }
-
-//
-
-#if 0
-inline void stringify_int8(int8_t n, char* p)
-{
-    char digit;
-
-    if (n < 0) {
-        *p++ = '-';
-        n = abs(n);
-    }
-
-    if (n >= 100) {
-        digit = '0';
-        while (n >= 100) {
-            n = n - 100;
-            digit++;
-        }
-        *p++ = digit;
-        if (n == 0) {
-            *p++ = '0';
-            *p++ = '0';
-            return;
-        } else if (n < 10) {
-            *p++ = '0';
-        }
-    }
-
-    if (n >= 10) {
-        digit = '0';
-        while (n >= 10) {
-            n = n - 10;
-            digit++;
-        }
-        *p++ = digit;
-        if (n == 0) {
-            *p++ = '0';
-            return;
-        }
-    }
-
-    digit = '0' + n;
-    *p++ = digit;
-    
-    *p = 0x00;
-}
-#endif
 
 //
 
@@ -307,10 +253,15 @@ int8_t read_temperature(volatile uint8_t* port, volatile uint8_t* ddr, volatile 
     return temperature;
 }
 
-ISR(INT0_vect)
+volatile uint8_t counter = 0;
+
+ISR(WDT_OVERFLOW_vect)
 {
-    // Disable the INT0 interrupt to prevent it from firing before we are ready to handle it again
-    GIMSK &= ~(1 << INT0);
+    // Disable the watchdog
+    WDTCSR |= (1 << WDCE) | (1 << WDE);
+    WDTCSR &= ~(1 << WDE);
+
+    counter++;
 }
 
 int main(void)
@@ -322,7 +273,9 @@ int main(void)
 
     // PB7 is our debug LED
 
+#if 0
     DDRB |= (1 << PB7);
+#endif
 
     xbee_setup();
 
@@ -337,47 +290,51 @@ int main(void)
         DS18B20_ONE_PORT &= ~(1 << DS18B20_ONE_DQ); // onewire_low(&DS18B20_ONE_PORT, DS18B20_ONE_DQ);
         DS18B20_TWO_PORT &= ~(1 << DS18B20_TWO_DQ); // onewire_low(&DS18B20_TWO_PORT, DS18B20_TWO_DQ);
 
-        // Sleep in power down mode. Before we sleep we enable the INT0 interrupt.
-
-        GIMSK |= (1 << INT0); // This needs to be before the sleep instruction
+        // Enable the watchdog. It will fire every 4 seconds.
         
+        //WDTCSR |= (1 << WDCE) | (1 << WDE);
+        //WDTCSR = (1 << WDIE) | (1 << WDP3);
+        
+        WDTCSR = (1 << WDIE) | (1 << WDE) | (1 << WDP3);
+
+        // Sleep
+
         set_sleep_mode(SLEEP_MODE_PWR_DOWN);
         sleep_enable();
         sleep_cpu();
+        
+        // Debug - Flash the led three times
 
-        // Debug
-
-        // Flash the led three times
-        for (uint8_t i = 0; i < 3; i++) {
-            PORTB |= (1 << PB7);
-            _delay_ms(50);
-            PORTB &= ~(1 << PB7);
-            _delay_ms(50);
-        }
+        DDRB |= (1 << PB7);
+        PORTB |= (1 << PB7);
+        _delay_ms(100);
+        PORTB &= ~(1 << PB7);
+        DDRB &= ~(1 << PB7);
 
         // Do work
 
-        int8_t temperatureValues[2] = {
-            read_temperature(&DS18B20_ONE_PORT, &DS18B20_ONE_DDR, &DS18B20_ONE_PIN, DS18B20_ONE_DQ, DS18B20_ONE_VCC),
-            read_temperature(&DS18B20_TWO_PORT, &DS18B20_TWO_DDR, &DS18B20_TWO_PIN, DS18B20_TWO_DQ, DS18B20_TWO_VCC)
-        };
-
-        if (xbee_enable() == 0)
+        if (counter >= (60 / 4))
         {
-            char packet[4] = {
-                0x01, // Temperature Sensor
-                0x02, // Two values
-                temperatureValues[0],
-                temperatureValues[1]
+            int8_t temperatureValues[2] = {
+                read_temperature(&DS18B20_ONE_PORT, &DS18B20_ONE_DDR, &DS18B20_ONE_PIN, DS18B20_ONE_DQ, DS18B20_ONE_VCC),
+                read_temperature(&DS18B20_TWO_PORT, &DS18B20_TWO_DDR, &DS18B20_TWO_PIN, DS18B20_TWO_DQ, DS18B20_TWO_VCC)
             };
 
-            xbee_transmit_bytes(coordinator_address, coordinator_network, packet, 4);
-            
-            xbee_disable();
-        }
-        
-        for (uint8_t i = 0; i < 2; i++) {
-            _delay_ms(1000);
+            if (xbee_enable() == 0)
+            {
+                char packet[4] = {
+                    0x01, // Temperature Sensor
+                    0x02, // Two values
+                    temperatureValues[0],
+                    temperatureValues[1]
+                };
+                
+                xbee_transmit_bytes(coordinator_address, coordinator_network, packet, 4);
+                
+                xbee_disable();
+            }
+
+            counter = 0;
         }
     }
 
