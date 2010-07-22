@@ -4,7 +4,15 @@
 #include <string.h>
 #include <avr/interrupt.h>
 #include <avr/io.h>
+#include <avr/pgmspace.h>
 #include <util/delay.h>
+
+//
+
+struct string_descriptor_t {
+    uint8_t type;
+    char* string;
+};
 
 //
 
@@ -167,7 +175,7 @@ void usart_tx_bytes(uint8_t* p, uint8_t n)
 }
 #endif
 
-uint16_t xbee_checksum;
+uint8_t xbee_checksum;
 
 void xbee_setup()
 {
@@ -207,13 +215,28 @@ void xbee_tx_bytes(const uint8_t* bytes, uint8_t length)
     }
 }
 
+void xbee_tx_bytes_P(const uint8_t* bytes, uint8_t length)
+{
+    while (length--) {
+        xbee_checksum += pgm_read_byte(bytes);
+        while ((UCSRA & (1 << UDRE)) == 0x00) {
+            // Do nothing
+        }
+        UDR = pgm_read_byte(bytes++);
+    }
+}
+
 //
 
-void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, char** strings, uint8_t count)
+inline void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, struct string_descriptor_t* strings, uint8_t count)
 {
     uint8_t length = 0;
     for (uint8_t i = 0; i < count; i++) {
-        length += strlen(strings[i]);
+        if (strings[i].type) {
+            length += strlen_P(strings[i].string);
+        } else {
+            length += strlen(strings[i].string);
+        }
     }
 
     xbee_tx(0x7e);                               // Start Delimiter
@@ -230,7 +253,11 @@ void xbee_transmit_strings(const uint8_t* address, const uint8_t* network, char*
             xbee_tx(0x00);                               // Broadcast Radius
             xbee_tx(0x00);                               // Options
             for (uint8_t i = 0; i < count; i++) {
-                xbee_tx_bytes(strings[i], strlen(strings[i])); // RF Data
+                if (strings[i].type) {
+                    xbee_tx_bytes_P(strings[i].string, strlen_P(strings[i].string)); // RF Data
+                } else {
+                    xbee_tx_bytes(strings[i].string, strlen(strings[i].string)); // RF Data
+                }
             }
         }
     }
@@ -250,8 +277,12 @@ void xbee_disable()
 
 //
 
-static const uint8_t coordinator_address[8] = { 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f };
-static const uint8_t coordinator_network[2] = { 0xff, 0xfe };
+const uint8_t coordinator_address[8] = { 0x00, 0x13, 0xa2, 0x00, 0x40, 0x32, 0x12, 0x4f };
+const uint8_t coordinator_network[2] = { 0xff, 0xfe };
+
+const char s1[] PROGMEM = "{\"t\":\"t\",\"v\":1,\"sensors\":[";
+const char s2[] PROGMEM = ",";
+const char s3[] PROGMEM = "]}";
 
 int main(void)
 {
@@ -280,10 +311,10 @@ int main(void)
                 
                 if (xbee_enable() == 0)
                 {
-                    int8_t temperatureValues[3] = { temperature, 0, 0 };
-                    char temperatureStrings[3][5];
+                    int8_t temperatureValues[2] = { temperature, 0 };
+                    char temperatureStrings[2][5];
 
-                    for (uint8_t i = 0; i < 3; i++)
+                    for (uint8_t i = 0; i < 2; i++)
                     {
                         if ((uint8_t) temperatureValues[i] != 0xff) {
                             stringify_int8(temperatureValues[i], &temperatureStrings[i][0]);
@@ -295,14 +326,12 @@ int main(void)
                         }
                     }
                     
-                    char* strings[7] = {
-                        "{\"t\":\"t\",\"v\":1,\"sensors\":[",
-                        temperatureStrings[0],
-                        ",",
-                        temperatureStrings[1],
-                        ",",
-                        temperatureStrings[2],
-                        "]}"
+                    struct string_descriptor_t strings[5] = {
+                        { 1, s1 },
+                        { 0, temperatureStrings[0] },
+                        { 1, s2 },
+                        { 0, temperatureStrings[1] },
+                        { 1, s3 }
                     };
                     
                     xbee_transmit_strings(coordinator_address, coordinator_network, strings, 7);

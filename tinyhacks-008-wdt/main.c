@@ -5,38 +5,35 @@
 #include <avr/sleep.h>
 #include <avr/delay.h>
 
-volatile uint8_t count = 0;
+volatile uint8_t counter = 0;
 
 ISR(WDT_vect)
 {
-    // Ping the watchdog LED
-
-    PORTB |= (1 << PB1);
-    _delay_ms(5);
-    PORTB &= ~(1 << PB1);
-    _delay_ms(5);
-
-    // Disable the watchdog
-    
-    WDTCR |= (1 << WDCE) | (1 << WDE);
-    WDTCR &= ~(1 << WDE);
-
-    // Increment the timer
-    
-    count++;
+    counter++;
 }
 
 int main(void)
 {
-    DDRB = (1 << PB0) | (1 << PB1);
+    DDRB = (1 << PB0);
+
+    // Watchdog signal will be active low
+    //PORTB |= (1 << PB0);
+
+    // Setup the power reduction register
+    PRR = (1 << PRTIM1) | (1 << PRTIM0) | (1 << PRUSI) | (1 << PRADC);
 
     sei();
     
     while (1)
     {
-        // Enable the watchdog
-
-        WDTCR = (1 << WDIE) | (1 << WDE) | (1 << WDP2) | (1 << WDP1) | (1 << WDP0);
+        // Disable the watchdog
+    
+        WDTCR |= (1 << WDCE) | (1 << WDE);
+        WDTCR &= ~(1 << WDE);
+        
+        // Enable the watchdog. It will fire every 4 seconds.
+        
+        WDTCR = (1 << WDIE) | (1 << WDE) | (1 << WDP3);
 
         // Sleep in power down mode. We will be woken up by the watchdog interrupt
 
@@ -44,22 +41,17 @@ int main(void)
         sleep_enable();
         sleep_cpu();
 
-        // When we wake up the watchdog interrupt has fired. Blink the LED.
+        // When we wake up the watchdog interrupt has fired, chck if we have done enough
+        // iterations for an hour. If so, pulse PB0 low.
 
-        for (uint8_t i = 0; i < count; i++)
+        if (counter >= (60 / 60))
         {
-            PORTB |= (1 << PB0);
-            _delay_ms(50);
-            PORTB &= ~(1 << PB0);
-            _delay_ms(50);
+            counter = 0;
+
+            PINB |= (1 << PB0);
+            _delay_us(4);
+            PINB &= ~(1 << PB0);
         }
-        
-        // We blink up to 5 times
-        
-        if (count == 5) {
-            count = 0;
-        }
-        
     }
 
     return 0;
