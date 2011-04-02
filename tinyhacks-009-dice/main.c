@@ -61,7 +61,7 @@ void shifter_write(uint8_t b)
 
 void display_clear()
 {
-   shifter_write(0);
+   shifter_write(~0);
 }
 
 //
@@ -81,7 +81,7 @@ void display_out(uint8_t value)
       DISPLAY_NUMERAL_9
    };
    
-   shifter_write(values[value]);
+   shifter_write(~values[value]);
 }
 
 //
@@ -99,7 +99,7 @@ void snake_step()
       DISPLAY_SEGMENT_F
    };
    
-   shifter_write(values[snake_position]);
+   shifter_write(~values[snake_position]);
    
    snake_position++;
    if (snake_position == 6) {
@@ -124,6 +124,8 @@ int main(void)
 {
    shifter_setup();
    display_clear();
+
+   PRR |= (1 << PRTIM1) | (1 << PRTIM0) | (1 << PRUSI) | (1 << PRADC);
 
    PORTB |= (1 << PB3);
 
