@@ -261,6 +261,7 @@ ISR(WDT_OVERFLOW_vect)
     WDTCSR |= (1 << WDCE) | (1 << WDE);
     WDTCSR &= ~(1 << WDE);
 
+    // Increment the counter so we can track iterations
     counter++;
 }
 
@@ -271,15 +272,9 @@ int main(void)
     DS18B20_ONE_DDR |= (1 << DS18B20_ONE_VCC);
     DS18B20_TWO_DDR |= (1 << DS18B20_TWO_VCC);    
 
-    // PB7 is our debug LED
-
-#if 0
-    DDRB |= (1 << PB7);
-#endif
-
     xbee_setup();
 
-    _delay_ms(1000);
+    _delay_ms(1000); // TODO: Is this still needed?
 
     sei();
 
@@ -292,9 +287,6 @@ int main(void)
 
         // Enable the watchdog. It will fire every 4 seconds.
         
-        //WDTCSR |= (1 << WDCE) | (1 << WDE);
-        //WDTCSR = (1 << WDIE) | (1 << WDP3);
-        
         WDTCSR = (1 << WDIE) | (1 << WDE) | (1 << WDP3);
 
         // Sleep
@@ -302,14 +294,16 @@ int main(void)
         set_sleep_mode(SLEEP_MODE_PWR_DOWN);
         sleep_enable();
         sleep_cpu();
-        
-        // Debug - Flash the led three times
 
+#if 0        
+        // Debug - Flash the led three times
+        
         DDRB |= (1 << PB7);
         PORTB |= (1 << PB7);
         _delay_ms(100);
         PORTB &= ~(1 << PB7);
         DDRB &= ~(1 << PB7);
+#endif
 
         // Do work
 
