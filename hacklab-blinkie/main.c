@@ -103,13 +103,6 @@ void pulse()
 
 void sleep()
 {
-    for (uint8_t i = 0; i < 5; i++) {
-		PORTB |= (1 << PB0);
-		_delay_ms(250);
-		PORTB &= ~(1 << PB0);
-		_delay_ms(250);
-	}
-
 	GIMSK |= (1 << PCIE);
 	PCMSK |= (1 << PCINT3);
 
@@ -274,37 +267,21 @@ int main(void)
 
     PORTB |= (1 << PB3);
 
-	// Clear the CPU status register and disable the Watchdog Timer.
-	// We do this because we might arrive here because the user
-	// pressed the button, which causes a reset by the Watchdog Timer.
-
-    MCUSR = 0;
-    wdt_disable();
-
-	// This is for testing. Blink. Sleep. Blink.
-
-	if (0) {
-        for (uint8_t i = 0; i < 5; i++) {
-			PORTB |= (1 << PB0);
-			_delay_ms(250);
-			PORTB &= ~(1 << PB0);
-			_delay_ms(250);
-		}
-
-		GIMSK |= (1 << PCIE);
-		PCMSK |= (1 << PCINT3);
-
-		set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-		sleep_enable();
-		sleep_cpu();
-
+#if 0
         for (uint8_t i = 0; i < 5; i++) {
 			PORTB |= (1 << PB1);
 			_delay_ms(250);
 			PORTB &= ~(1 << PB1);
 			_delay_ms(250);
 		}
-	}
+#endif
+
+	// Clear the CPU status register and disable the Watchdog Timer.
+	// We do this because we might arrive here because the user
+	// pressed the button, which causes a reset by the Watchdog Timer.
+
+    MCUSR = 0;
+    wdt_disable();
 
 	// Load the program number from the EEPROM. We check if the number
 	// is in range of the allowed values. It might not be if the EEPROM
@@ -339,7 +316,7 @@ int main(void)
 		}
 
 		sleep();
-		_delay_ms(50);
+		_delay_ms(250);
 	}
     
     return 0;
