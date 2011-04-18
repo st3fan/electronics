@@ -14,7 +14,7 @@
 #                is connected.
 # FUSES ........ Parameters for avrdude to flash the fuses appropriately.
 
-DEVICE     = attiny85
+DEVICE     = attiny45
 CLOCK      = 1000000
 PROGRAMMER = -c dragon_isp -P usb -B 10
 OBJECTS    = main.o
